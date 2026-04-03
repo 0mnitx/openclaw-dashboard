@@ -1,0 +1,16 @@
+{
+  "name": "openclaw-dashboard",
+  "version": "1.0.0",
+  "description": "OpenClaw 系统监控面板 - 监控 OpenClaw 运行状态、系统资源占用和 Token 用量",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "keywords": ["openclaw", "dashboard", "monitor", "token"],
+  "author": "Omnitx",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
