@@ -198,12 +198,14 @@ app.get('/api/openclaw', async (req, res) => {
   });
 });
 
-// API: Token 用量（需配置）
-// 请填写你的 TokenPlan API 地址和密钥
+// API: Token 用量（MiniMax Token Plan）
+// MiniMax Token Plan API 文档: https://platform.minimaxi.com/docs/token-plan/intro
+// API Key 格式: sk-cp-xxx (Token Plan 专用，与按量计费 Key 不同)
 const TOKENPLAN_CONFIG = {
   enabled: false,
-  apiUrl: '',  // 例如: https://api.tokenplan.cn/usage
-  apiKey: ''   // 你的 API Key
+  apiUrl: '',   // MiniMax 暂未提供公开的用量查询 API，需联系官方或通过账户页面查询
+  apiKey: '',    // 你的 Token Plan API Key (sk-cp- 开头)
+  planName: ''   // 可选：订阅套餐名称 (Starter/Plus/Max/Ultra 等)
 };
 
 app.get('/api/token', async (req, res) => {
