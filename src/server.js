@@ -27,7 +27,6 @@ function getSystemResources() {
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
   
-  // CPU 使用率（简化计算）
   let totalIdle = 0, totalTick = 0;
   cpu.forEach(c => {
     for (const type in c.times) {
@@ -36,11 +35,6 @@ function getSystemResources() {
     totalIdle += c.times.idle;
   });
   const cpuUsage = ((1 - totalIdle / totalTick) * 100).toFixed(1);
-
-  // 磁盘使用率
-  exec('df -h / | tail -1 | awk \'{print $2,$3,$5}\'', (err, stdout) => {
-    // 处理磁盘
-  });
 
   return {
     cpu: cpuUsage,
@@ -70,28 +64,89 @@ function formatUptime(seconds) {
   return d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m`;
 }
 
-// 解析 openclaw status 输出
-function parseOpenClawStatus(text) {
-  if (!text || text.error) return { raw: text.data || text.error };
+// 解析 Sessions 表格
+function parseSessions(text) {
+  const sessions = [];
+  if (!text) return sessions;
   
-  const lines = text.data.split('\n');
-  const result = {
-    overview: {},
-    gateway: {},
-    sessions: [],
-    channels: [],
-    raw: text.data
-  };
-
-  let section = '';
-  lines.forEach(line => {
-    if (line.includes('┌─')) section = 'overview';
-    if (line.includes('Gateway')) section = 'gateway';
-    if (line.includes('Sessions')) section = 'sessions';
-    if (line.includes('Channels')) section = 'channels';
-  });
-
-  return result;
+  const lines = text.split('\n');
+  let state = 'search'; // search -> header -> data -> done
+  let passedHeader = false;
+  
+  for (const line of lines) {
+    // 寻找 Sessions 表格开始
+    if (state === 'search') {
+      if (line.trim() === 'Sessions') {
+        state = 'found';
+      }
+      continue;
+    }
+    
+    if (state === 'found') {
+      // 等待表头行（├）
+      if (line.includes('├')) {
+        state = 'header';
+        passedHeader = true;
+      }
+      continue;
+    }
+    
+    // 表头行之后，等待数据行
+    if (state === 'header') {
+      // 跳过表头本身
+      if (line.includes('│') && !line.includes('Key') && !line.includes('├')) {
+        state = 'data';
+      }
+    }
+    
+    if (state !== 'data') continue;
+    
+    // 表格结束标志（└）
+    if (line.includes('└')) {
+      break;
+    }
+    
+    // 跳过空行和不包含 │ 的行
+    if (!line.includes('│') || line.trim() === '') continue;
+    
+    // 解析表格行 - 去除所有 Unicode box drawing 字符
+    const cleaned = line.replace(/[┌┬┤┘┴└├┼─│]/g, ' ');
+    const cells = cleaned.split(/\s{2,}/).filter(c => c.trim());
+    
+    if (cells.length >= 4) {
+      const key = cells[0].trim();
+      const kind = cells[1].trim();
+      const age = cells[2].trim();
+      const model = cells[3].trim();
+      const tokens = cells[4] ? cells[4].trim() : '';
+      
+      // 跳过无效行
+      if (!key || key === 'Key') continue;
+      
+      // 提取 session ID，简化显示
+      const sessionId = key.replace('agent:', '').replace(/:/g, ' › ');
+      const ageDisplay = age === 'just now' ? '刚刚' : 
+                        age.includes('m ago') ? age.replace('m ago', '分钟前') :
+                        age.includes('h ago') ? age.replace('h ago', '小时前') :
+                        age.includes('d ago') ? age.replace('d ago', '天前') : age;
+      
+      // 解析 token 使用
+      const tokenMatch = tokens.match(/(\d+)k\/(\d+)k\s*\((\d+)%\)/);
+      const tokenPercent = tokenMatch ? parseInt(tokenMatch[3]) : 0;
+      
+      sessions.push({
+        id: sessionId,
+        kind: kind,
+        age: ageDisplay,
+        model: model,
+        tokens: tokens,
+        tokenPercent: tokenPercent,
+        isActive: age === 'just now'
+      });
+    }
+  }
+  
+  return sessions;
 }
 
 // API: 系统资源
@@ -110,19 +165,71 @@ app.get('/api/system', (req, res) => {
   });
 });
 
-// API: OpenClaw 状态
+// API: OpenClaw 状态（增强版）
 app.get('/api/openclaw', async (req, res) => {
   const status = await getOpenClawStatus();
-  res.json(status);
+  const sessions = parseSessions(status.data);
+  
+  // 提取 Gateway 状态
+  let gatewayStatus = { running: false, detail: '' };
+  if (status.data) {
+    const lines = status.data.split('\n');
+    lines.forEach(line => {
+      if (line.includes('Gateway') && line.includes('running')) {
+        gatewayStatus = { running: true, detail: '运行中' };
+      }
+    });
+  }
+  
+  // 统计
+  const activeCount = sessions.filter(s => s.isActive).length;
+  const totalSessions = sessions.length;
+  
+  res.json({
+    error: status.error,
+    data: status.data,
+    sessions: sessions,
+    gateway: gatewayStatus,
+    summary: {
+      totalSessions: totalSessions,
+      activeSessions: activeCount,
+      activeModels: [...new Set(sessions.map(s => s.model))]
+    }
+  });
 });
 
 // API: Token 用量（需配置）
-app.get('/api/token', (req, res) => {
-  // 这里留空，用户可以自行配置 tokenplan API
-  res.json({
-    configured: false,
-    message: '请在 src/server.js 中配置 TokenPlan API'
-  });
+// 请填写你的 TokenPlan API 地址和密钥
+const TOKENPLAN_CONFIG = {
+  enabled: false,
+  apiUrl: '',  // 例如: https://api.tokenplan.cn/usage
+  apiKey: ''   // 你的 API Key
+};
+
+app.get('/api/token', async (req, res) => {
+  if (!TOKENPLAN_CONFIG.enabled || !TOKENPLAN_CONFIG.apiUrl) {
+    res.json({
+      configured: false,
+      message: '请在 src/server.js 中配置 TokenPlan API'
+    });
+    return;
+  }
+  
+  try {
+    const response = await fetch(TOKENPLAN_CONFIG.apiUrl, {
+      headers: { 'Authorization': `Bearer ${TOKENPLAN_CONFIG.apiKey}` }
+    });
+    const data = await response.json();
+    res.json({
+      configured: true,
+      ...data
+    });
+  } catch (e) {
+    res.json({
+      configured: true,
+      error: e.message
+    });
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
