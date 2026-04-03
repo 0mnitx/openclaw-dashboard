@@ -491,9 +491,6 @@
               <strong style="color:#e2e8f0">配置说明：</strong><br>
               编辑 <code style="background:#0f172a;padding:2px 6px;border-radius:4px">src/server.js</code><br>
               填写 <code style="background:#0f172a;padding:2px 6px;border-radius:4px">TOKENPLAN_CONFIG</code><br><br>
-              <strong style="color:#e2e8f0">需要提供：</strong><br>
-              • MiniMax 用量查询 API 地址<br>
-              • Token Plan API Key (sk-cp- 开头)<br><br>
               <a href="https://platform.minimaxi.com/docs/token-plan/intro" target="_blank" style="color:#38bdf8">📖 查看 TokenPlan 文档</a>
             </div>
           `;
@@ -511,24 +508,69 @@
           return;
         }
         
-        document.getElementById('token').innerHTML = `
-          <div class="metric">
-            <span class="metric-label">套餐</span>
-            <span class="metric-value">${data.plan || '-'}</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">已用量</span>
-            <span class="metric-value">${data.used || '-'}</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">剩余额度</span>
-            <span class="metric-value">${data.remaining || '-'}</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">重置周期</span>
-            <span class="metric-value">${data.resetPeriod || '每5小时(滚动)'}</span>
-          </div>
-        `;
+        let html = '';
+        
+        // MiniMax-M* 主要模型
+        if (data.models?.main) {
+          const m = data.models.main;
+          const colorClass = m.percent >= 90 ? 'full' : m.percent >= 70 ? 'warning' : '';
+          html += `
+            <div class="metric" style="margin-bottom:8px">
+              <span class="metric-label">${m.name} (5小时窗口)</span>
+              <span class="metric-value" style="color:${m.percent >= 90 ? '#ef4444' : m.percent >= 70 ? '#f59e0b' : '#22c55e'}">${m.used}/${m.total}</span>
+            </div>
+            <div class="progress-bar" style="margin-bottom:12px">
+              <div class="progress-fill ${colorClass}" style="width:${m.percent}%"></div>
+            </div>
+            <div class="metric" style="font-size:0.75rem">
+              <span class="metric-label">剩余</span>
+              <span class="metric-value">${m.remaining} 次 · ${m.resetIn}后重置</span>
+            </div>
+          `;
+        }
+        
+        // 周额度
+        if (data.weekly) {
+          const w = data.weekly;
+          const wPercent = Math.round((w.used / w.total) * 100);
+          const colorClass = wPercent >= 90 ? 'full' : wPercent >= 70 ? 'warning' : '';
+          html += `
+            <div class="metric" style="margin-top:15px;margin-bottom:8px">
+              <span class="metric-label">周额度 (M*+其他)</span>
+              <span class="metric-value" style="color:#94a3b8">${w.used}/${w.total}</span>
+            </div>
+            <div class="progress-bar" style="margin-bottom:8px">
+              <div class="progress-fill ${colorClass}" style="width:${wPercent}%"></div>
+            </div>
+            <div class="metric" style="font-size:0.75rem">
+              <span class="metric-label">剩余</span>
+              <span class="metric-value">${w.remaining} · ${w.resetIn}后重置</span>
+            </div>
+          `;
+        }
+        
+        // 其他模型
+        if (data.models?.speech) {
+          const s = data.models.speech;
+          html += `
+            <div class="metric" style="margin-top:15px">
+              <span class="metric-label">${s.name}</span>
+              <span class="metric-value">${s.used}/${s.total}</span>
+            </div>
+          `;
+        }
+        
+        if (data.models?.image) {
+          const i = data.models.image;
+          html += `
+            <div class="metric">
+              <span class="metric-label">${i.name}</span>
+              <span class="metric-value">${i.used}/${i.total}</span>
+            </div>
+          `;
+        }
+        
+        document.getElementById('token').innerHTML = html || '<div class="loading">暂无数据</div>';
       } catch (e) {
         document.getElementById('token').innerHTML = '<div class="loading">加载失败</div>';
       }

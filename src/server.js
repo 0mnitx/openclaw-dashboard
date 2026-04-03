@@ -1,11 +1,20 @@
 const express = require('express');
 const { exec } = require('child_process');
 const os = require('os');
+const axios = require('axios');
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.static('public'));
+
+// MiniMax Token Plan 配置
+// API 文档: https://platform.minimaxi.com/docs/token-plan/intro
+const TOKENPLAN_CONFIG = {
+  enabled: true,
+  apiUrl: 'https://www.minimaxi.com/v1/api/openplatform/coding_plan/remains',
+  apiKey: 'sk-cp-H58PybR65Oz-Rv3wNgLjcXtRb_YZTjP-WbejPSsUMKsIDtolbjQb-172gEc9Bk6Tnl7xpuu24s-j4TKlBzlRozDcSe6E2WbuMfxBgnVFAFDFFpA0Y8Kgn0M'
+};
 
 // 获取 OpenClaw 状态
 function getOpenClawStatus() {
@@ -70,11 +79,9 @@ function parseSessions(text) {
   if (!text) return sessions;
   
   const lines = text.split('\n');
-  let state = 'search'; // search -> header -> data -> done
-  let passedHeader = false;
+  let state = 'search';
   
   for (const line of lines) {
-    // 寻找 Sessions 表格开始
     if (state === 'search') {
       if (line.trim() === 'Sessions') {
         state = 'found';
@@ -83,33 +90,27 @@ function parseSessions(text) {
     }
     
     if (state === 'found') {
-      // 等待表头行（├）
       if (line.includes('├')) {
         state = 'header';
-        passedHeader = true;
       }
       continue;
     }
     
-    // 表头行之后，等待数据行
     if (state === 'header') {
-      // 跳过表头本身
       if (line.includes('│') && !line.includes('Key') && !line.includes('├')) {
         state = 'data';
       }
+      continue;
     }
     
     if (state !== 'data') continue;
     
-    // 表格结束标志（└）
     if (line.includes('└')) {
       break;
     }
     
-    // 跳过空行和不包含 │ 的行
     if (!line.includes('│') || line.trim() === '') continue;
     
-    // 解析表格行 - 去除所有 Unicode box drawing 字符
     const cleaned = line.replace(/[┌┬┤┘┴└├┼─│]/g, ' ');
     const cells = cleaned.split(/\s{2,}/).filter(c => c.trim());
     
@@ -120,17 +121,14 @@ function parseSessions(text) {
       const model = cells[3].trim();
       const tokens = cells[4] ? cells[4].trim() : '';
       
-      // 跳过无效行
       if (!key || key === 'Key') continue;
       
-      // 提取 session ID，简化显示
       const sessionId = key.replace('agent:', '').replace(/:/g, ' › ');
       const ageDisplay = age === 'just now' ? '刚刚' : 
                         age.includes('m ago') ? age.replace('m ago', '分钟前') :
                         age.includes('h ago') ? age.replace('h ago', '小时前') :
                         age.includes('d ago') ? age.replace('d ago', '天前') : age;
       
-      // 解析 token 使用
       const tokenMatch = tokens.match(/(\d+)k\/(\d+)k\s*\((\d+)%\)/);
       const tokenPercent = tokenMatch ? parseInt(tokenMatch[3]) : 0;
       
@@ -165,12 +163,11 @@ app.get('/api/system', (req, res) => {
   });
 });
 
-// API: OpenClaw 状态（增强版）
+// API: OpenClaw 状态
 app.get('/api/openclaw', async (req, res) => {
   const status = await getOpenClawStatus();
   const sessions = parseSessions(status.data);
   
-  // 提取 Gateway 状态
   let gatewayStatus = { running: false, detail: '' };
   if (status.data) {
     const lines = status.data.split('\n');
@@ -181,7 +178,6 @@ app.get('/api/openclaw', async (req, res) => {
     });
   }
   
-  // 统计
   const activeCount = sessions.filter(s => s.isActive).length;
   const totalSessions = sessions.length;
   
@@ -199,32 +195,85 @@ app.get('/api/openclaw', async (req, res) => {
 });
 
 // API: Token 用量（MiniMax Token Plan）
-// MiniMax Token Plan API 文档: https://platform.minimaxi.com/docs/token-plan/intro
-// API Key 格式: sk-cp-xxx (Token Plan 专用，与按量计费 Key 不同)
-const TOKENPLAN_CONFIG = {
-  enabled: false,
-  apiUrl: '',   // MiniMax 暂未提供公开的用量查询 API，需联系官方或通过账户页面查询
-  apiKey: '',    // 你的 Token Plan API Key (sk-cp- 开头)
-  planName: ''   // 可选：订阅套餐名称 (Starter/Plus/Max/Ultra 等)
-};
-
 app.get('/api/token', async (req, res) => {
   if (!TOKENPLAN_CONFIG.enabled || !TOKENPLAN_CONFIG.apiUrl) {
     res.json({
       configured: false,
-      message: '请在 src/server.js 中配置 TokenPlan API'
+      message: '请在 src/server.js 中配置 TOKENPLAN_CONFIG'
     });
     return;
   }
   
   try {
-    const response = await fetch(TOKENPLAN_CONFIG.apiUrl, {
-      headers: { 'Authorization': `Bearer ${TOKENPLAN_CONFIG.apiKey}` }
+    const response = await axios.get(TOKENPLAN_CONFIG.apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${TOKENPLAN_CONFIG.apiKey}`,
+        'Accept': 'application/json'
+      },
+      timeout: 10000
     });
-    const data = await response.json();
+    
+    const rawData = response.data;
+    const modelRemains = rawData.model_remains || [];
+    
+    // 提取主要模型
+    const mainModel = modelRemains.find(m => m.model_name && m.model_name.includes('MiniMax-M'));
+    const speechModel = modelRemains.find(m => m.model_name && m.model_name.includes('speech'));
+    const imageModel = modelRemains.find(m => m.model_name && m.model_name.includes('image'));
+    
+    // 计算5小时窗口重置时间
+    let resetIn = '未知';
+    if (mainModel && mainModel.end_time) {
+      const now = Date.now();
+      const remaining = Math.max(0, mainModel.end_time - now);
+      const hours = Math.floor(remaining / (1000 * 60 * 60));
+      const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+      resetIn = hours > 0 ? `${hours}小时${minutes}分钟` : `${minutes}分钟`;
+    }
+    
+    // 计算周额度重置时间
+    let weeklyResetIn = '未知';
+    if (mainModel && mainModel.weekly_end_time) {
+      const now = Date.now();
+      const remaining = Math.max(0, mainModel.weekly_end_time - now);
+      const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      weeklyResetIn = `${days}天${hours}小时`;
+    }
+    
     res.json({
       configured: true,
-      ...data
+      error: null,
+      models: {
+        main: mainModel ? {
+          name: 'MiniMax-M*',
+          used: mainModel.current_interval_usage_count,
+          total: mainModel.current_interval_total_count,
+          remaining: mainModel.current_interval_total_count - mainModel.current_interval_usage_count,
+          percent: Math.round((mainModel.current_interval_usage_count / mainModel.current_interval_total_count) * 100),
+          resetIn: resetIn
+        } : null,
+        speech: speechModel && speechModel.current_interval_total_count > 0 ? {
+          name: 'Speech-HD',
+          used: speechModel.current_interval_usage_count,
+          total: speechModel.current_interval_total_count,
+          remaining: speechModel.current_interval_total_count - speechModel.current_interval_usage_count,
+          percent: Math.round((speechModel.current_interval_usage_count / speechModel.current_interval_total_count) * 100)
+        } : null,
+        image: imageModel && imageModel.current_interval_total_count > 0 ? {
+          name: 'Image-01',
+          used: imageModel.current_interval_usage_count,
+          total: imageModel.current_interval_total_count,
+          remaining: imageModel.current_interval_total_count - imageModel.current_interval_usage_count,
+          percent: Math.round((imageModel.current_interval_usage_count / imageModel.current_interval_total_count) * 100)
+        } : null
+      },
+      weekly: mainModel ? {
+        used: mainModel.current_weekly_usage_count,
+        total: mainModel.current_weekly_total_count,
+        remaining: mainModel.current_weekly_total_count - mainModel.current_weekly_usage_count,
+        resetIn: weeklyResetIn
+      } : null
     });
   } catch (e) {
     res.json({
