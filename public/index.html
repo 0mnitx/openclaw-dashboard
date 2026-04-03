@@ -88,6 +88,10 @@
       font-weight: 600;
       color: #e2e8f0;
       font-size: 0.9rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 300px;
     }
     
     .session-status {
@@ -117,7 +121,7 @@
     
     .session-meta {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
       gap: 8px;
       font-size: 0.8rem;
     }
@@ -126,6 +130,7 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
+      min-width: 0;
     }
     
     .meta-label {
@@ -135,6 +140,9 @@
     
     .meta-value {
       color: #e2e8f0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     
     .token-progress {
