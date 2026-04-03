@@ -521,11 +521,13 @@
         // MiniMax-M* 主要模型
         if (data.models?.main) {
           const m = data.models.main;
+          // 剩余越多越安全，用剩余算颜色
+          const safePercent = 100 - m.percent;
           const colorClass = m.percent >= 90 ? 'full' : m.percent >= 70 ? 'warning' : '';
           html += `
             <div class="metric" style="margin-bottom:8px">
               <span class="metric-label">${m.name} (5小时窗口)</span>
-              <span class="metric-value" style="color:${m.percent >= 90 ? '#ef4444' : m.percent >= 70 ? '#f59e0b' : '#22c55e'}">${m.used}/${m.total}</span>
+              <span class="metric-value" style="color:${m.percent >= 90 ? '#ef4444' : m.percent >= 70 ? '#f59e0b' : '#22c55e'}">已用 ${m.used} · 剩 ${m.remaining} 次</span>
             </div>
             <div class="progress-bar" style="margin-bottom:12px">
               <div class="progress-fill ${colorClass}" style="width:${m.percent}%"></div>
@@ -540,15 +542,14 @@
         // 周额度
         if (data.weekly) {
           const w = data.weekly;
-          const wPercent = Math.round((w.used / w.total) * 100);
-          const colorClass = wPercent >= 90 ? 'full' : wPercent >= 70 ? 'warning' : '';
+          const colorClass = m.percent >= 90 ? 'full' : m.percent >= 70 ? 'warning' : '';
           html += `
             <div class="metric" style="margin-top:15px;margin-bottom:8px">
               <span class="metric-label">周额度 (M*+其他)</span>
-              <span class="metric-value" style="color:#94a3b8">${w.used}/${w.total}</span>
+              <span class="metric-value" style="color:#94a3b8">已用 ${w.used} · 剩 ${w.remaining}</span>
             </div>
             <div class="progress-bar" style="margin-bottom:8px">
-              <div class="progress-fill ${colorClass}" style="width:${wPercent}%"></div>
+              <div class="progress-fill ${colorClass}" style="width:${Math.round((w.used/w.total)*100)}%"></div>
             </div>
             <div class="metric" style="font-size:0.75rem">
               <span class="metric-label">剩余</span>

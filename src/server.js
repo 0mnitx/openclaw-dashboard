@@ -225,9 +225,9 @@ app.get('/api/token', async (req, res) => {
     let resetIn = '未知';
     if (mainModel && mainModel.end_time) {
       const now = Date.now();
-      const remaining = Math.max(0, mainModel.end_time - now);
-      const hours = Math.floor(remaining / (1000 * 60 * 60));
-      const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+      const remainingMs = Math.max(0, mainModel.end_time - now);
+      const hours = Math.floor(remainingMs / (1000 * 60 * 60));
+      const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
       resetIn = hours > 0 ? `${hours}小时${minutes}分钟` : `${minutes}分钟`;
     }
     
@@ -235,9 +235,9 @@ app.get('/api/token', async (req, res) => {
     let weeklyResetIn = '未知';
     if (mainModel && mainModel.weekly_end_time) {
       const now = Date.now();
-      const remaining = Math.max(0, mainModel.weekly_end_time - now);
-      const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const remainingMs = Math.max(0, mainModel.weekly_end_time - now);
+      const days = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((remainingMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       weeklyResetIn = `${days}天${hours}小时`;
     }
     
@@ -247,31 +247,31 @@ app.get('/api/token', async (req, res) => {
       models: {
         main: mainModel ? {
           name: 'MiniMax-M*',
-          used: mainModel.current_interval_usage_count,
+          used: mainModel.current_interval_total_count - mainModel.current_interval_usage_count,
           total: mainModel.current_interval_total_count,
-          remaining: mainModel.current_interval_total_count - mainModel.current_interval_usage_count,
-          percent: Math.round((mainModel.current_interval_usage_count / mainModel.current_interval_total_count) * 100),
+          remaining: mainModel.current_interval_usage_count,
+          percent: Math.round(((mainModel.current_interval_total_count - mainModel.current_interval_usage_count) / mainModel.current_interval_total_count) * 100),
           resetIn: resetIn
         } : null,
         speech: speechModel && speechModel.current_interval_total_count > 0 ? {
           name: 'Speech-HD',
-          used: speechModel.current_interval_usage_count,
+          used: speechModel.current_interval_total_count - speechModel.current_interval_usage_count,
           total: speechModel.current_interval_total_count,
-          remaining: speechModel.current_interval_total_count - speechModel.current_interval_usage_count,
-          percent: Math.round((speechModel.current_interval_usage_count / speechModel.current_interval_total_count) * 100)
+          remaining: speechModel.current_interval_usage_count,
+          percent: Math.round(((speechModel.current_interval_total_count - speechModel.current_interval_usage_count) / speechModel.current_interval_total_count) * 100)
         } : null,
         image: imageModel && imageModel.current_interval_total_count > 0 ? {
           name: 'Image-01',
-          used: imageModel.current_interval_usage_count,
+          used: imageModel.current_interval_total_count - imageModel.current_interval_usage_count,
           total: imageModel.current_interval_total_count,
-          remaining: imageModel.current_interval_total_count - imageModel.current_interval_usage_count,
-          percent: Math.round((imageModel.current_interval_usage_count / imageModel.current_interval_total_count) * 100)
+          remaining: imageModel.current_interval_usage_count,
+          percent: Math.round(((imageModel.current_interval_total_count - imageModel.current_interval_usage_count) / imageModel.current_interval_total_count) * 100)
         } : null
       },
       weekly: mainModel ? {
-        used: mainModel.current_weekly_usage_count,
+        used: mainModel.current_weekly_total_count - mainModel.current_weekly_usage_count,
         total: mainModel.current_weekly_total_count,
-        remaining: mainModel.current_weekly_total_count - mainModel.current_weekly_usage_count,
+        remaining: mainModel.current_weekly_usage_count,
         resetIn: weeklyResetIn
       } : null
     });
