@@ -80,6 +80,7 @@ function parseSessions(text) {
   
   const lines = text.split('\n');
   let state = 'search';
+  let prevLine = '';
   
   for (const line of lines) {
     if (state === 'search') {
@@ -91,15 +92,13 @@ function parseSessions(text) {
     
     if (state === 'found') {
       if (line.includes('├')) {
-        state = 'header';
+        // Check if the PREVIOUS line was the header row (│ Key │ Kind │...)
+        if (prevLine.includes('│') && prevLine.includes('Key')) {
+          state = 'data';
+        }
+        // If not, keep searching
       }
-      continue;
-    }
-    
-    if (state === 'header') {
-      if (line.includes('│') && !line.includes('Key') && !line.includes('├')) {
-        state = 'data';
-      }
+      prevLine = line;
       continue;
     }
     
@@ -124,22 +123,35 @@ function parseSessions(text) {
       if (!key || key === 'Key') continue;
       
       const sessionId = key.replace('agent:', '').replace(/:/g, ' › ');
-      const ageDisplay = age === 'just now' ? '刚刚' : 
-                        age.includes('m ago') ? age.replace('m ago', '分钟前') :
-                        age.includes('h ago') ? age.replace('h ago', '小时前') :
-                        age.includes('d ago') ? age.replace('d ago', '天前') : age;
+      
+      // age 可能被拆成两个 cell，需要合并
+      // 情况1: "1m" + "ago" = "1m ago"（分钟前）
+      // 情况2: "just" + "now" = "just now"（活跃）
+      let fullAge = age;
+      if (cells[3] === 'ago' && (age.endsWith('m') || age.match(/^\d+h$/))) {
+        fullAge = age + ' ' + cells[3];
+      } else if (cells[3] === 'now' && age === 'just') {
+        fullAge = 'just now';
+      }
+      
+      const finalAgeDisplay = fullAge === 'just now' ? '刚刚' : 
+                        fullAge.endsWith('m ago') ? fullAge.replace('m ago', '分钟前') :
+                        fullAge.endsWith('h ago') ? fullAge.replace('h ago', '小时前') :
+                        fullAge.endsWith('d ago') ? fullAge.replace('d ago', '天前') : fullAge;
       
       const tokenMatch = tokens.match(/(\d+)k\/(\d+)k\s*\((\d+)%\)/);
       const tokenPercent = tokenMatch ? parseInt(tokenMatch[3]) : 0;
       
+      const isReallyActive = fullAge === 'just now';
+      
       sessions.push({
         id: sessionId,
         kind: kind,
-        age: ageDisplay,
+        age: finalAgeDisplay,
         model: model,
         tokens: tokens,
         tokenPercent: tokenPercent,
-        isActive: age === 'just now'
+        isActive: isReallyActive
       });
     }
   }
